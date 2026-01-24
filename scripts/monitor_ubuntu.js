@@ -1,12 +1,10 @@
 require('dotenv').config({ path: '/root/hetzner-billing-auto-shutdown-and-notif/.env' });
 const axios = require('axios');
-const crypto = require('crypto');
 const Table = require('cli-table3');
 console.log("Date now", new Date().toISOString());
 console.log('Environment Variables:');
 console.log('ServerAPI:', process.env.ServerAPI ? '<found, but not printing>' : '<not found>');
-console.log('FEISHU_WEBHOOK_URL:', process.env.FEISHU_WEBHOOK_URL ? '<found, but not printing>' : '<not found>');
-console.log('FEISHU_WEBHOOK_SECRET:', process.env.FEISHU_WEBHOOK_SECRET ? '<found, but not printing>' : '<not found>');
+console.log('TELEGRAM_BOT:', process.env.TELEGRAM_BOT ? '<found, but not printing>' : '<not found>');
 console.log('THRESHOLD_PERCENT_NOTIF:', process.env.THRESHOLD_PERCENT_NOTIF || '80 (default)');
 console.log('SEND_USAGE_NOTIF_ALWAYS:', process.env.SEND_USAGE_NOTIF_ALWAYS || 'false (default)');
 console.log('OBFUSCATE_SERVER_NAMES_FROM_CONSOLE_LOG:', process.env.OBFUSCATE_SERVER_NAMES_FROM_CONSOLE_LOG || 'false (default)');
@@ -14,8 +12,7 @@ console.log('-----------------------------------');
 
 // Configuration
 const API_TOKEN = process.env.ServerAPI;
-const FEISHU_WEBHOOK_URL = process.env.FEISHU_WEBHOOK_URL;
-const FEISHU_WEBHOOK_SECRET = process.env.FEISHU_WEBHOOK_SECRET;
+const TELEGRAM_BOT = process.env.TELEGRAM_BOT;
 
 const THRESHOLD_PERCENT_NOTIF = parseFloat(process.env.THRESHOLD_PERCENT_NOTIF || '80');
 const SEND_USAGE_NOTIF_ALWAYS = process.env.SEND_USAGE_NOTIF_ALWAYS === 'true';
@@ -26,30 +23,15 @@ if (!API_TOKEN) {
   process.exit(1);
 }
 
-function genSign(timestamp, secret) {
-  if (!secret) return '';
-  const strToSign = `${timestamp}\n${secret}`;
-  return crypto.createHmac('sha256', strToSign).digest('base64');
-}
-
-async function sendFeishuMessage(text) {
-  if (!FEISHU_WEBHOOK_URL || !FEISHU_WEBHOOK_SECRET) {
-    console.error('Feishu webhook not configured. Message only printed to console.');
+async function sendTelegramMessage(text) {
+  if (!TELEGRAM_BOT) {
+    console.error('Telegram bot not configured. Message only printed to console.');
     return { ok: false, status: 0, payload: null, responseText: '' };
   }
 
-  const timestamp = Math.floor(Date.now() / 1000);
-  const sign = genSign(timestamp, FEISHU_WEBHOOK_SECRET);
-  const response = await fetch(FEISHU_WEBHOOK_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      timestamp: timestamp.toString(),
-      sign,
-      msg_type: 'text',
-      content: { text },
-    }),
-  });
+  const encodedText = encodeURIComponent(text);
+  const url = `https://api.telegram.org/${TELEGRAM_BOT}/sendMessage?chat_id=6331981948&text=%22${encodedText}%22`;
+  const response = await fetch(url);
 
   const responseText = await response.text();
   let payload = null;
@@ -57,19 +39,19 @@ async function sendFeishuMessage(text) {
     try {
       payload = JSON.parse(responseText);
     } catch (err) {
-      console.error('Feishu response JSON parse failed:', err);
+      console.error('Telegram response JSON parse failed:', err);
     }
   }
 
   if (!response.ok) {
-    console.error('Feishu request failed:', response.status, response.statusText);
+    console.error('Telegram request failed:', response.status, response.statusText);
   }
 
-  if (payload && typeof payload.code !== 'undefined' && payload.code !== 0) {
-    console.error('Feishu response error:', payload);
+  if (payload && typeof payload.ok !== 'undefined' && payload.ok !== true) {
+    console.error('Telegram response error:', payload);
   }
 
-  const ok = response.ok && (!payload || payload.code === 0);
+  const ok = response.ok && (!payload || payload.ok === true);
   return { ok, status: response.status, payload, responseText };
 }
 
@@ -93,7 +75,7 @@ async function fetchServers() {
   } catch (err) {
     const msg = `:warning: Error fetching Hetzner servers: ${err.message}`;
     console.error(msg);
-    await sendFeishuMessage(msg);
+    await sendTelegramMessage(msg);
     process.exit(1);
   }
 }
@@ -107,7 +89,7 @@ function calculatePercentage(used, total) {
   return ((used / total) * 100).toFixed(4) + '%';
 }
 
-async function sendFeishuAlert(serversData, allServersData, sendAlways = false) {
+async function sendTelegramAlert(serversData, allServersData, sendAlways = false) {
   if (!sendAlways && serversData.length === 0) return;
 
   let headerText;
@@ -129,11 +111,11 @@ async function sendFeishuAlert(serversData, allServersData, sendAlways = false) 
 
   const text = lines.join('\n');
 
-  console.log('\n--- Feishu Message ---');
+  console.log('\n--- Telegram Message ---');
   console.log(text);
   console.log('----------------------\n');
 
-  await sendFeishuMessage(text);
+  await sendTelegramMessage(text);
 }
 
 (async () => {
@@ -193,5 +175,5 @@ async function sendFeishuAlert(serversData, allServersData, sendAlways = false) 
 
   console.log(table.toString());
 
-  await sendFeishuAlert(highUsageServers, allServersData, SEND_USAGE_NOTIF_ALWAYS);
+  await sendTelegramAlert(highUsageServers, allServersData, SEND_USAGE_NOTIF_ALWAYS);
 })();
