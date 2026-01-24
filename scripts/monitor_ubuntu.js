@@ -1,9 +1,8 @@
-require('dotenv').config();
+require('dotenv').config({ path: '/root/hetzner-billing-auto-shutdown-and-notif/.env' });
 const axios = require('axios');
 const crypto = require('crypto');
 const Table = require('cli-table3');
-
-console.log("hetzner-billing-auto-shutdown-and-notif ubuntu monitor v0.0.1\n");
+console.log("Date now", new Date().toISOString());
 console.log('Environment Variables:');
 console.log('ServerAPI:', process.env.ServerAPI ? '<found, but not printing>' : '<not found>');
 console.log('FEISHU_WEBHOOK_URL:', process.env.FEISHU_WEBHOOK_URL ? '<found, but not printing>' : '<not found>');
